@@ -25,7 +25,11 @@ def show_images(cv_images):
     for i, cv_image in enumerate(cv_images):
         plt.subplot(1, cols, i + 1)
         plt.imshow(bgr_to_rgb(cv_image))
-
         plt.xticks([]), plt.yticks([])
 
+    plt.show()
+
+def show_image(cv_image):
+    plt.imshow(bgr_to_rgb(cv_image))
+    plt.xticks([]), plt.yticks([])
     plt.show()
