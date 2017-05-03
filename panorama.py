@@ -9,10 +9,11 @@ def cylinder_projection(frag_imgs, focal_len):
     for frag_img in frag_imgs:
         cylinder_proj = np.zeros((cylinder_h, cylinder_w, frag_img.shape[2]))
 
-        cylinder_coordinate = np.array(np.unravel_index(np.arange(cylinder_proj.shape[0] * cylinder_proj.shape[1]), cylinder_proj.shape[:2])).T
-        sampling_locations = np.zeros_like(cylinder_coordinate)
-        sampling_locations[:, 0] = (np.tan(cylinder_coordinate[:0] / focal_len) * focal_len).astype('int')
-        sampling_locations[:, 1] = (np.tan(cylinder_coordinate[:0] / focal_len) * focal_len).astype('int')
+        for y in range(cylinder_proj[0]):
+            for x in range(cylinder_proj[1]):
+                pass
+
+
     return result
 
 def stitch_panorama(frag_imgs, focal_len):
