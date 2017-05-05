@@ -33,3 +33,22 @@ def show_image(cv_image):
     plt.imshow(bgr_to_rgb(cv_image))
     plt.xticks([]), plt.yticks([])
     plt.show()
+
+def show_heatmap(map, cmap='jet'):
+    plt.imshow(map, cmap=cmap)
+    plt.xticks([]), plt.yticks([])
+    plt.show()
+
+def plot_hist(xs, range, bins=20):
+    plt.hist(xs, bins, range=range)
+    plt.show()
+
+def plot_hist2d(y, x, bins=20):
+    plt.hist2d(x, y, bins, cmap='jet')
+    plt.show()
+
+def plot_img_with_feats(img, feat_locs):
+    plt.imshow(img)
+    plt.xticks([]), plt.yticks([])
+    plt.scatter(feat_locs[:,1], feat_locs[:,0], c='r', s=2)
+    plt.show()
