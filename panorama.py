@@ -161,7 +161,7 @@ def stitch(imgs, descs_feat_locs, valid_y):
     return pano[valid_y: -valid_y]
 
 CLOSE_DISTANCE = 1
-MIN_MATCHED_FEAT_NUM = 10
+MIN_MATCHED_FEAT_NUM = 15
 def compute_displacement(imgs, i, descs_feat_locs):
     # parameter imgs is for plotting features
     kd_tree = spatial.cKDTree(descs_feat_locs[i - 1][0])
@@ -173,13 +173,24 @@ def compute_displacement(imgs, i, descs_feat_locs):
         close_distance += 0.5
         close_points_filter = dd < close_distance
 
-    print('matched feature number %s' % np.sum(close_points_filter))
+    # print('matched feature number %s' % np.sum(close_points_filter))
     matched_idxes = ii[close_points_filter]
     # utils.show_img_with_feats(imgs[i - 1], descs_feat_locs[i - 1][1][matched_idxes])
     # utils.show_img_with_feats(imgs[i], descs_feat_locs[i][1][close_points_filter])
     displacements = descs_feat_locs[i - 1][1][matched_idxes] - descs_feat_locs[i][1][close_points_filter]
+    displacements = remove_outlier(displacements)
+    # print('outlier removed matched feature number %s' % displacements.shape[0])
     return np.mean(displacements, axis=0).astype(int)
 
+def remove_outlier(vecs):
+    vecs_mean = np.mean(vecs, axis=0)
+    vecs_std = np.std(vecs, axis=0)
+    new_vecs = []
+    for vec in vecs:
+        if np.all(np.abs(vec - vecs_mean) < vecs_std):
+            new_vecs.append(vec)
+
+    return np.array(new_vecs)
 
 def blend_and_stitch(pano, img, dy, dx):
     img_cpy = img.astype(float)
