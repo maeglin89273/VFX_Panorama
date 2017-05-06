@@ -9,11 +9,10 @@ def stitch_panorama(frag_imgs, focal_len):
     descs_feat_locs = msop(cylinder_imgs, valid_y)
     return stitch(cylinder_imgs, descs_feat_locs, valid_y)
 
-
 def cylinder_warp(frag_imgs, focal_len):
     cylinder_imgs = [None] * len(frag_imgs)
 
-    #assume every fragment image has the same dimension
+    #assume every fragment image has the same dimensions
     cylinder_h = frag_imgs[0].shape[0]
     cylinder_w = int(focal_len * 2 * np.arctan(frag_imgs[0].shape[1] / (focal_len * 2)))
     half_img_h = frag_imgs[0].shape[0] / 2
@@ -44,7 +43,7 @@ def cylinder_warp(frag_imgs, focal_len):
 
 
 CORNER_THRESHOLD = 5000
-MAX_FEAT_CANDIDATE_NUM = 3000
+MAX_FEAT_CANDIDATE_NUM = 3500
 MARGIN = 2
 def msop(imgs, valid_y):
     descs_feat_locs = [None] * len(imgs)
@@ -67,7 +66,7 @@ def msop(imgs, valid_y):
         f_HM = det_H / trace_H
 
         corner_threshold = CORNER_THRESHOLD
-
+        #We are not going use too much candidate feature point (around MAX_FEAT_CANDIDATE_NUM only)
         while True:
             feat_mask = f_HM > corner_threshold
             feat_mask[:valid_y + MARGIN] = False
@@ -121,6 +120,7 @@ def anms(f_HM, feat_locs, feat_num=250):
 PATCH_SIZE = 4
 SAMPLING_GAP = 5
 def compute_descriptor_vecs(gray_img, feat_locs):
+    # no rotation invarient, since it's not suit for the panorama during feature matching
     # no wavelet transform
     h, w = gray_img.shape
     gray_img = cv2.GaussianBlur(gray_img, (3, 3), 1)
@@ -133,11 +133,6 @@ def compute_descriptor_vecs(gray_img, feat_locs):
 
     return np.array(descriptors)
 
-def compute_grad_angle(feat_loc, grad_I_y, grad_I_x):
-
-    grad_y = grad_I_y[feat_loc[0], feat_loc[1]]
-    grad_x = grad_I_x[feat_loc[0], feat_loc[1]]
-    return np.arctan2(grad_y, grad_x) * 180 / np.pi
 
 def stitch(imgs, descs_feat_locs, valid_y):
     pano = imgs[0]
@@ -147,6 +142,8 @@ def stitch(imgs, descs_feat_locs, valid_y):
         pano = blend_and_stitch(pano, imgs[i], dy, dx)
         total_dy += dy
 
+    #assume the panorama is taken with tripods, so it only leans gradually
+    # I use a shear matrix to adjust it
     total_dx = pano.shape[1]
     shear_mat = np.array([[1, 0, 0], [total_dy / total_dx, 1, 0]])
 
@@ -158,12 +155,14 @@ def stitch(imgs, descs_feat_locs, valid_y):
     elif total_dy > 0:
         pano = pano[int(total_dy):]
 
+    #remove the invalid area that cylinder projection produces
     return pano[valid_y: -valid_y]
 
-CLOSE_DISTANCE = 1
+CLOSE_DISTANCE = 1.0
 MIN_MATCHED_FEAT_NUM = 15
 def compute_displacement(imgs, i, descs_feat_locs):
     # parameter imgs is for plotting features
+
     kd_tree = spatial.cKDTree(descs_feat_locs[i - 1][0])
     dd, ii = kd_tree.query(descs_feat_locs[i][0], k=1)
 

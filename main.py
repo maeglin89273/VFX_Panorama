@@ -1,3 +1,4 @@
+import os
 import sys
 
 import cv2
@@ -12,4 +13,4 @@ if __name__ == '__main__':
     pano = panorama.stitch_panorama(utils.load_series(ROOT_DIR), focal_len)
 
     utils.show_image(pano)
-    cv2.imwrite('result.jpg', pano)
+    cv2.imwrite('%s_panorama.jpg' % os.path.basename(ROOT_DIR), pano)
