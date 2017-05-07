@@ -43,7 +43,7 @@ def cylinder_warp(frag_imgs, focal_len):
 
 
 CORNER_THRESHOLD = 5000
-MAX_FEAT_CANDIDATE_NUM = 3500
+MAX_FEAT_CANDIDATE_NUM = 3000
 MARGIN = 2
 def msop(imgs, valid_y):
     descs_feat_locs = [None] * len(imgs)
@@ -64,6 +64,7 @@ def msop(imgs, valid_y):
         trace_H[divided_by_zero_map] = 1
 
         f_HM = det_H / trace_H
+        utils.show_heatmap(f_HM, gray_img)
 
         corner_threshold = CORNER_THRESHOLD
         #We are not going use too much candidate feature point (around MAX_FEAT_CANDIDATE_NUM only)
@@ -155,7 +156,7 @@ def stitch(imgs, descs_feat_locs, valid_y):
     elif total_dy > 0:
         pano = pano[int(total_dy):]
 
-    #remove the invalid area that cylinder projection produces
+    #remove the invalid area that cylinder projection not uses
     return pano[valid_y: -valid_y]
 
 CLOSE_DISTANCE = 1.0
@@ -174,22 +175,22 @@ def compute_displacement(imgs, i, descs_feat_locs):
 
     # print('matched feature number %s' % np.sum(close_points_filter))
     matched_idxes = ii[close_points_filter]
-    # utils.show_img_with_feats(imgs[i - 1], descs_feat_locs[i - 1][1][matched_idxes])
-    # utils.show_img_with_feats(imgs[i], descs_feat_locs[i][1][close_points_filter])
-    displacements = descs_feat_locs[i - 1][1][matched_idxes] - descs_feat_locs[i][1][close_points_filter]
-    displacements = remove_outlier(displacements)
+    pre_img_candidate_feat_points = descs_feat_locs[i - 1][1][matched_idxes]
+    img_candidate_feat_points = descs_feat_locs[i][1][close_points_filter]
+    displacements = pre_img_candidate_feat_points - img_candidate_feat_points
+    displacements, inlier_mask = remove_outlier(displacements)
+
+    utils.show_imgs_with_feats((imgs[i], imgs[i - 1]), (img_candidate_feat_points[inlier_mask], pre_img_candidate_feat_points[inlier_mask]))
+
     # print('outlier removed matched feature number %s' % displacements.shape[0])
     return np.mean(displacements, axis=0).astype(int)
 
 def remove_outlier(vecs):
     vecs_mean = np.mean(vecs, axis=0)
     vecs_std = np.std(vecs, axis=0)
-    new_vecs = []
-    for vec in vecs:
-        if np.all(np.abs(vec - vecs_mean) < vecs_std):
-            new_vecs.append(vec)
+    inlier_mask = np.all(vecs - vecs_mean < vecs_std, axis=1)
+    return vecs[inlier_mask], inlier_mask
 
-    return np.array(new_vecs)
 
 def blend_and_stitch(pano, img, dy, dx):
     img_cpy = img.astype(float)
@@ -197,9 +198,9 @@ def blend_and_stitch(pano, img, dy, dx):
     new_pano_shape = (o_pano_shape[0] + np.abs(dy), o_pano_shape[1] + np.abs(dx), o_pano_shape[2])
     new_pano = np.zeros(new_pano_shape)
 
-    x_overlap = img_cpy.shape[1] - np.abs(dx)
-    h_to_l_weights = np.linspace(1, 0, x_overlap)
-    l_to_h_weights = np.linspace(0, 1, x_overlap)
+    overlap_x = img_cpy.shape[1] - np.abs(dx)
+    h_to_l_weights = np.linspace(1, 0, overlap_x)
+    l_to_h_weights = np.linspace(0, 1, overlap_x)
     o_pano_begin_y = 0
     o_pano_end_y = o_pano_shape[0]
     img_begin_y = dy
@@ -216,7 +217,7 @@ def blend_and_stitch(pano, img, dy, dx):
         o_pano_end_x = o_pano_shape[1] - dx
         new_pano[o_pano_begin_y: o_pano_end_y, o_pano_begin_x: o_pano_end_x] = pano
         blend_start = o_pano_begin_x
-        blend_end = x_overlap + o_pano_begin_x
+        blend_end = overlap_x + o_pano_begin_x
         new_pano[:, blend_start: blend_end] *= (np.tile(l_to_h_weights, (new_pano.shape[0], 1))[:, :, np.newaxis])
         img_cpy[:, o_pano_begin_x:] *= (np.tile(h_to_l_weights, (img_cpy.shape[0], 1))[:, :, np.newaxis])
         new_pano[img_begin_y: img_end_y, :img_cpy.shape[1]] += img_cpy
@@ -224,10 +225,10 @@ def blend_and_stitch(pano, img, dy, dx):
         o_pano_begin_x = 0
         o_pano_end_x = o_pano_shape[1]
         new_pano[o_pano_begin_y: o_pano_end_y, o_pano_begin_x: o_pano_end_x] = pano
-        blend_start = o_pano_shape[1] - x_overlap
+        blend_start = o_pano_shape[1] - overlap_x
         blend_end = o_pano_shape[1]
         new_pano[:, blend_start: blend_end] *= (np.tile(h_to_l_weights, (new_pano.shape[0], 1))[:, :, np.newaxis])
-        img_cpy[:, :x_overlap] *= (np.tile(l_to_h_weights, (img_cpy.shape[0], 1))[:, :, np.newaxis])
+        img_cpy[:, :overlap_x] *= (np.tile(l_to_h_weights, (img_cpy.shape[0], 1))[:, :, np.newaxis])
         new_pano[img_begin_y: img_end_y, blend_start:] += img_cpy
 
     return new_pano

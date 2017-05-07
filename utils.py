@@ -34,8 +34,12 @@ def show_image(cv_image):
     plt.xticks([]), plt.yticks([])
     plt.show()
 
-def show_heatmap(map, cmap='jet'):
+def show_heatmap(map, gray_img, cmap='jet'):
+    plt.subplot(1, 2, 1)
     plt.imshow(map, cmap=cmap)
+    plt.xticks([]), plt.yticks([])
+    plt.subplot(1, 2, 2)
+    plt.imshow(gray_img, cmap='gray')
     plt.xticks([]), plt.yticks([])
     plt.show()
 
@@ -51,4 +55,14 @@ def show_img_with_feats(img, feat_locs):
     plt.imshow(bgr_to_rgb(img))
     plt.xticks([]), plt.yticks([])
     plt.scatter(feat_locs[:,1], feat_locs[:,0], c='r', s=2)
+    plt.show()
+
+def show_imgs_with_feats(imgs, imgs_feat_locs):
+    cols = len(imgs)
+    for i, (img, feat_locs) in enumerate(zip(imgs, imgs_feat_locs)):
+        plt.subplot(1, cols, i + 1)
+        plt.imshow(bgr_to_rgb(img))
+        plt.xticks([]), plt.yticks([])
+        plt.scatter(feat_locs[:, 1], feat_locs[:, 0], c='r', s=2)
+
     plt.show()
