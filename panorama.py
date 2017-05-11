@@ -1,13 +1,20 @@
 import numpy as np
 import cv2
 import scipy
-from scipy import ndimage, spatial
+from scipy import ndimage, spatial, stats
+
 import utils
+
+SHOW_PROCESS = False
 
 def stitch_panorama(frag_imgs, focal_len):
     cylinder_imgs, valid_y = cylinder_warp(frag_imgs, focal_len)
     descs_feat_locs = msop(cylinder_imgs, valid_y)
     return stitch(cylinder_imgs, descs_feat_locs, valid_y)
+
+
+def scale_imgs(imgs, scale):
+    return [cv2.resize(img, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_AREA) for img in imgs]
 
 def cylinder_warp(frag_imgs, focal_len):
     cylinder_imgs = [None] * len(frag_imgs)
@@ -42,9 +49,11 @@ def cylinder_warp(frag_imgs, focal_len):
 
 
 
-CORNER_THRESHOLD = 5000
-MAX_FEAT_CANDIDATE_NUM = 3000
+DEFAULT_CORNER_THRESHOLD = 5000
+MIN_FEAT_CANDIDATE_NUM = 50
+MAX_FEAT_CANDIDATE_NUM = 3500
 MARGIN = 2
+VALID_X = 10
 def msop(imgs, valid_y):
     descs_feat_locs = [None] * len(imgs)
     for i, img in enumerate(imgs):
@@ -64,17 +73,24 @@ def msop(imgs, valid_y):
         trace_H[divided_by_zero_map] = 1
 
         f_HM = det_H / trace_H
-        utils.show_heatmap(f_HM, gray_img)
 
-        corner_threshold = CORNER_THRESHOLD
+        # if SHOW_PROCESS:
+            # utils.show_heatmap(f_HM, gray_img)
+
+        corner_threshold = DEFAULT_CORNER_THRESHOLD
         #We are not going use too much candidate feature point (around MAX_FEAT_CANDIDATE_NUM only)
         while True:
             feat_mask = f_HM > corner_threshold
             feat_mask[:valid_y + MARGIN] = False
             feat_mask[-(valid_y + MARGIN):] = False
+            feat_mask[:, :VALID_X] = False
+            feat_mask[:, -VALID_X:] = False
 
-            if np.sum(feat_mask) > MAX_FEAT_CANDIDATE_NUM:
-                corner_threshold += 500
+            cand_feat_num = np.sum(feat_mask)
+            if  cand_feat_num > MAX_FEAT_CANDIDATE_NUM:
+                corner_threshold += 250
+            elif cand_feat_num < MIN_FEAT_CANDIDATE_NUM:
+                corner_threshold -= 250
             else:
                 break
 
@@ -86,7 +102,7 @@ def msop(imgs, valid_y):
 
     return descs_feat_locs
 
-C_ROBUST = 0.9
+C_ROBUST = 0.85
 def anms(f_HM, feat_locs, feat_num=250):
     max_r = np.linalg.norm(f_HM.shape)
     candidates = [None] * feat_locs.shape[0]
@@ -118,13 +134,13 @@ def anms(f_HM, feat_locs, feat_num=250):
 
     return np.array(candidates[:feat_num if feat_num < cand_len else cand_len], dtype=int)[:, :-1]
 
-PATCH_SIZE = 4
+PATCH_SIZE = 8
 SAMPLING_GAP = 5
 def compute_descriptor_vecs(gray_img, feat_locs):
     # no rotation invarient, since it's not suit for the panorama during feature matching
     # no wavelet transform
     h, w = gray_img.shape
-    gray_img = cv2.GaussianBlur(gray_img, (3, 3), 1)
+    gray_img = cv2.GaussianBlur(gray_img, (7, 7), 2)
 
     sampling_y, sampling_x = SAMPLING_GAP * np.mgrid[-PATCH_SIZE: PATCH_SIZE + 1, -PATCH_SIZE: PATCH_SIZE + 1]
     descriptors = [None] * len(feat_locs)
@@ -160,7 +176,7 @@ def stitch(imgs, descs_feat_locs, valid_y):
     return pano[valid_y: -valid_y]
 
 CLOSE_DISTANCE = 1.0
-MIN_MATCHED_FEAT_NUM = 15
+MIN_MATCHED_FEAT_NUM = 20
 def compute_displacement(imgs, i, descs_feat_locs):
     # parameter imgs is for plotting features
 
@@ -170,7 +186,7 @@ def compute_displacement(imgs, i, descs_feat_locs):
     close_distance = CLOSE_DISTANCE
     close_points_filter = dd < close_distance
     while np.sum(close_points_filter) < MIN_MATCHED_FEAT_NUM:
-        close_distance += 0.5
+        close_distance += 0.1
         close_points_filter = dd < close_distance
 
     # print('matched feature number %s' % np.sum(close_points_filter))
@@ -180,15 +196,18 @@ def compute_displacement(imgs, i, descs_feat_locs):
     displacements = pre_img_candidate_feat_points - img_candidate_feat_points
     displacements, inlier_mask = remove_outlier(displacements)
 
-    utils.show_imgs_with_feats((imgs[i], imgs[i - 1]), (img_candidate_feat_points[inlier_mask], pre_img_candidate_feat_points[inlier_mask]))
+    if SHOW_PROCESS:
+        utils.show_imgs_with_feats((imgs[i], imgs[i - 1]), (img_candidate_feat_points[inlier_mask], pre_img_candidate_feat_points[inlier_mask]))
 
     # print('outlier removed matched feature number %s' % displacements.shape[0])
     return np.mean(displacements, axis=0).astype(int)
 
+BIN_GRANULARITY = 20
 def remove_outlier(vecs):
-    vecs_mean = np.mean(vecs, axis=0)
-    vecs_std = np.std(vecs, axis=0)
-    inlier_mask = np.all(vecs - vecs_mean < vecs_std, axis=1)
+    utils.plot_hist2d(vecs[:,0], vecs[:,1], 20)
+    result = stats.binned_statistic_2d(vecs[:,0], vecs[:,1], None, statistic='count', bins=BIN_GRANULARITY, expand_binnumbers=True)
+    np.unravel_index(np.argmax(result.statistic), result.statistic.shape)
+
     return vecs[inlier_mask], inlier_mask
 
 
