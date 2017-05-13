@@ -7,8 +7,19 @@ import utils
 
 SHOW_PROCESS = False
 
-def stitch_panorama(frag_imgs, focal_len):
-    cylinder_imgs, valid_y = cylinder_warp(frag_imgs, focal_len)
+def stitch_panorama(frag_imgs, focal_len, shrink_align=False):
+    if shrink_align:
+        scale = 512.0 /  np.max(frag_imgs[0].shape)
+        cylinder_imgs, valid_y = cylinder_warp(frag_imgs, focal_len)
+        utils.show_image(cylinder_imgs[0])
+        scaled_cylinder_imgs = scale_imgs(cylinder_imgs, scale)
+        scaled_valid_y = int(valid_y * scale)
+        scaled_descs_feat_locs = msop(scaled_cylinder_imgs, scaled_valid_y)
+        descs_feat_locs = [(pair[0], np.round((pair[1] / scale)).astype(int)) for pair in scaled_descs_feat_locs]
+        return stitch(cylinder_imgs, descs_feat_locs, valid_y)
+
+    scale = np.max(frag_imgs[0].shape) / 512.0
+    cylinder_imgs, valid_y = cylinder_warp(frag_imgs, scale * focal_len)
     descs_feat_locs = msop(cylinder_imgs, valid_y)
     return stitch(cylinder_imgs, descs_feat_locs, valid_y)
 
@@ -30,16 +41,22 @@ def cylinder_warp(frag_imgs, focal_len):
     valid_y = int(half_cy_h - (focal_len * half_cy_h / np.sqrt(focal_len_sq + half_img_w ** 2)))
 
     for i, frag_img in enumerate(frag_imgs):
-        print('cylinder warp on image %s' % i)
+        print('cylindrical warp on image %s' % i)
         cylinder_proj = np.zeros((cylinder_h, cylinder_w, frag_img.shape[2]), dtype=frag_img.dtype)
-        for y in range(cylinder_proj.shape[0]):
-            for x in range(cylinder_proj.shape[1]):
-                theta = (x - half_cy_w) / focal_len
-                c_img_x = focal_len * np.tan(theta)
-                img_x = c_img_x + half_img_w
-                img_y = half_img_h - (half_cy_h - y) * np.sqrt(focal_len_sq + c_img_x ** 2) / focal_len
-                if 0 <= img_y < frag_img.shape[0] and 0 <= img_x < frag_img.shape[1]:
-                    cylinder_proj[y, x, :] = frag_img[int(img_y), int(img_x), :]
+
+        cylinder_coord_y, cylinder_coord_x  = np.mgrid[0: cylinder_proj.shape[0], 0: cylinder_proj.shape[1]]
+        theta = (cylinder_coord_x - half_cy_w) / focal_len
+        img_centered_coord_x = focal_len * np.tan(theta)
+        img_sampling_coord_x = img_centered_coord_x + half_img_w
+        img_sampling_coord_y = half_img_h - (half_cy_h - cylinder_coord_y) * np.sqrt(focal_len_sq + img_centered_coord_x ** 2) / focal_len
+        img_sampling_coord_x = np.round(img_sampling_coord_x).astype(int)
+        img_sampling_coord_y = np.round(img_sampling_coord_y).astype(int)
+
+        mask_x = np.logical_and(0 <= img_sampling_coord_x, img_sampling_coord_x < frag_img.shape[1])
+        mask_y = np.logical_and(0 <= img_sampling_coord_y, img_sampling_coord_y < frag_img.shape[0])
+        mask_xy = np.logical_and(mask_x, mask_y)
+
+        cylinder_proj[mask_xy, :] = frag_img[img_sampling_coord_y[mask_xy], img_sampling_coord_x[mask_xy], :]
 
         cylinder_imgs[i] = cylinder_proj
 
@@ -51,9 +68,9 @@ def cylinder_warp(frag_imgs, focal_len):
 
 DEFAULT_CORNER_THRESHOLD = 5000
 MIN_FEAT_CANDIDATE_NUM = 50
-MAX_FEAT_CANDIDATE_NUM = 3500
+MAX_FEAT_CANDIDATE_NUM = 3250
 MARGIN = 2
-VALID_X = 10
+VALID_X = 5
 def msop(imgs, valid_y):
     descs_feat_locs = [None] * len(imgs)
     for i, img in enumerate(imgs):
@@ -76,9 +93,10 @@ def msop(imgs, valid_y):
 
         # if SHOW_PROCESS:
             # utils.show_heatmap(f_HM, gray_img)
+            # utils.plot_hist(f_HM.ravel(), (0, 12000))
 
         corner_threshold = DEFAULT_CORNER_THRESHOLD
-        #We are not going use too much candidate feature point (around MAX_FEAT_CANDIDATE_NUM only)
+        #we are not going use too much candidate feature point (around MAX_FEAT_CANDIDATE_NUM only)
         while True:
             feat_mask = f_HM > corner_threshold
             feat_mask[:valid_y + MARGIN] = False
@@ -102,7 +120,7 @@ def msop(imgs, valid_y):
 
     return descs_feat_locs
 
-C_ROBUST = 0.85
+C_ROBUST = 0.9
 def anms(f_HM, feat_locs, feat_num=250):
     max_r = np.linalg.norm(f_HM.shape)
     candidates = [None] * feat_locs.shape[0]
@@ -204,9 +222,16 @@ def compute_displacement(imgs, i, descs_feat_locs):
 
 BIN_GRANULARITY = 20
 def remove_outlier(vecs):
-    utils.plot_hist2d(vecs[:,0], vecs[:,1], 20)
-    result = stats.binned_statistic_2d(vecs[:,0], vecs[:,1], None, statistic='count', bins=BIN_GRANULARITY, expand_binnumbers=True)
-    np.unravel_index(np.argmax(result.statistic), result.statistic.shape)
+    # if SHOW_PROCESS:
+    #     utils.plot_hist2d(vecs[:, 0], vecs[:, 1], BIN_GRANULARITY)
+
+    result = stats.binned_statistic_2d(vecs[:,0], vecs[:,1], None, statistic='count', bins=BIN_GRANULARITY)
+    #since the values of result.binnumber don't match the dimension of result.statistic, we pad zeros around result.statistic
+    statistic = result.statistic
+    bin_count = np.zeros((statistic.shape[0] + 2, statistic.shape[1] + 2))
+    bin_count[1: -1, 1: -1] = statistic
+    max_count_idx = np.argmax(bin_count)
+    inlier_mask = result.binnumber == max_count_idx
 
     return vecs[inlier_mask], inlier_mask
 
