@@ -7,19 +7,9 @@ import utils
 
 SHOW_PROCESS = False
 
-def stitch_panorama(frag_imgs, focal_len, shrink_align=False):
-    if shrink_align:
-        scale = 512.0 /  np.max(frag_imgs[0].shape)
-        cylinder_imgs, valid_y = cylinder_warp(frag_imgs, focal_len)
-        utils.show_image(cylinder_imgs[0])
-        scaled_cylinder_imgs = scale_imgs(cylinder_imgs, scale)
-        scaled_valid_y = int(valid_y * scale)
-        scaled_descs_feat_locs = msop(scaled_cylinder_imgs, scaled_valid_y)
-        descs_feat_locs = [(pair[0], np.round((pair[1] / scale)).astype(int)) for pair in scaled_descs_feat_locs]
-        return stitch(cylinder_imgs, descs_feat_locs, valid_y)
-
+def stitch_panorama(frag_imgs, focal_len):
     scale = np.max(frag_imgs[0].shape) / 512.0
-    cylinder_imgs, valid_y = cylinder_warp(frag_imgs, scale * focal_len)
+    cylinder_imgs, valid_y = cylindrical_warp(frag_imgs, scale * focal_len)
     descs_feat_locs = msop(cylinder_imgs, valid_y)
     return stitch(cylinder_imgs, descs_feat_locs, valid_y)
 
@@ -27,7 +17,7 @@ def stitch_panorama(frag_imgs, focal_len, shrink_align=False):
 def scale_imgs(imgs, scale):
     return [cv2.resize(img, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_AREA) for img in imgs]
 
-def cylinder_warp(frag_imgs, focal_len):
+def cylindrical_warp(frag_imgs, focal_len):
     cylinder_imgs = [None] * len(frag_imgs)
 
     #assume every fragment image has the same dimensions
@@ -152,7 +142,7 @@ def anms(f_HM, feat_locs, feat_num=250):
 
     return np.array(candidates[:feat_num if feat_num < cand_len else cand_len], dtype=int)[:, :-1]
 
-PATCH_SIZE = 8
+PATCH_SIZE = 4
 SAMPLING_GAP = 5
 def compute_descriptor_vecs(gray_img, feat_locs):
     # no rotation invarient, since it's not suit for the panorama during feature matching
@@ -194,7 +184,7 @@ def stitch(imgs, descs_feat_locs, valid_y):
     return pano[valid_y: -valid_y]
 
 CLOSE_DISTANCE = 1.0
-MIN_MATCHED_FEAT_NUM = 20
+MIN_MATCHED_FEAT_NUM = 25
 def compute_displacement(imgs, i, descs_feat_locs):
     # parameter imgs is for plotting features
 
